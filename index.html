@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>思考・アイデア管理アプリ</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Vue 3 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .pb-safe { padding-bottom: calc(4rem + env(safe-area-inset-bottom)); }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased selection:bg-indigo-500 selection:text-white">
+
+<div id="app" class="max-w-md mx-auto min-h-screen bg-white shadow-xl relative flex flex-col pb-safe">
+
+  <!-- 通知トースト -->
+  <div v-if="toastMessage" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900/90 text-white text-xs px-4 py-2 rounded-full shadow-lg transition-all">
+    {{ toastMessage }}
+  </div>
+
+  <!-- ヘッダー -->
+  <header class="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-100 px-4 py-3 flex justify-between items-center">
+    <h1 class="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
+      <span>🧠</span>
+      <span>Memo magic</span>
+    </h1>
+    <button @click="currentTab = 'search'" class="p-2 text-slate-500 hover:text-slate-800 rounded-full hover:bg-slate-100 text-sm">
+      🔍
+    </button>
+  </header>
+
+  <!-- メインコンテンツ領域 -->
+  <main class="flex-1 p-4">
+
+    <!-- 1. ホーム画面 -->
+    <div v-if="currentTab === 'home'" class="space-y-6">
+      <button @click="openMemoCreate()" class="w-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-bold py-4 px-6 rounded-2xl shadow-lg shadow-indigo-200 hover:shadow-indigo-300 active:scale-[0.98] transition flex items-center justify-center gap-3 text-lg">
+        <span>➕</span>
+        <span>新規メモを作成</span>
+      </button>
+
+      <section>
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="font-bold text-slate-700 text-sm tracking-wider uppercase">未深掘りのメモ</h2>
+          <button @click="currentTab = 'memos'" class="text-xs text-indigo-600 font-medium">すべて見る</button>
+        </div>
+        <div class="space-y-2">
+          <div v-if="pendingMemos.length === 0" class="text-xs text-slate-400 text-center py-4 bg-slate-50 rounded-xl border border-dashed">
+            未深掘りのメモはありません
+          </div>
+          <div v-for="memo in pendingMemos" :key="memo.id" @click="openMemoDetail(memo.id)" class="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl hover:border-indigo-300 cursor-pointer transition">
+            <div class="flex justify-between items-start mb-1">
+              <span class="font-semibold text-slate-900 text-sm line-clamp-1">{{ memo.title }}</span>
+              <span class="text-[10px] bg-amber-100 text-amber-800 font-medium px-2 py-0.5 rounded-full shrink-0">未分析</span>
+            </div>
+            <p class="text-xs text-slate-600 line-clamp-2 mb-2">{{ memo.fact }}</p>
+            <div class="flex flex-wrap gap-1 mb-2">
+              <span v-if="memo.groupTag" class="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-md font-semibold">📁 {{ memo.groupTag }}</span>
+              <span v-if="memo.source" class="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md truncate max-w-[150px]">🔗 {{ memo.source }}</span>
+            </div>
+            <div class="text-[11px] text-slate-400">{{ formatDate(memo.createdAt) }}</div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="font-bold text-slate-700 text-sm tracking-wider uppercase">進行中のアイデア</h2>
+          <button @click="currentTab = 'ideas'" class="text-xs text-indigo-600 font-medium">すべて見る</button>
+        </div>
+        <div class="space-y-2">
+          <div v-if="activeIdeas.length === 0" class="text-xs text-slate-400 text-center py-4 bg-slate-50 rounded-xl border border-dashed">
+            進行中のアイデアはありません
+          </div>
+          <div v-for="idea in activeIdeas" :key="idea.id" @click="openIdeaDetail(idea.id)" class="p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-xl hover:border-indigo-300 cursor-pointer transition">
+            <div class="flex justify-between items-center mb-1">
+              <span class="font-semibold text-indigo-950 text-sm">{{ idea.name }}</span>
+              <span class="text-[10px] bg-indigo-200 text-indigo-800 font-medium px-2 py-0.5 rounded-full">{{ idea.status }}</span>
+            </div>
+            <p class="text-xs text-slate-600 line-clamp-2 mb-2">{{ idea.content }}</p>
+            <div class="flex flex-wrap gap-1">
+              <span v-if="idea.groupTag" class="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-md font-semibold">📁 {{ idea.groupTag }}</span>
+              <span v-for="tag in idea.tags" :key="tag" class="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md">🏷️ {{ tag }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 2. 新規メモ作成画面 -->
+    <div v-if="currentTab === 'memo-create'" class="space-y-4">
+      <div class="flex items-center justify-between border-b pb-2">
+        <h2 class="font-bold text-slate-800 text-base">新規メモ作成</h2>
+        <button @click="currentTab = 'home'" class="text-slate-400 text-sm">キャンセル</button>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">タイトル *</label>
+        <input v-model="newMemo.title" type="text" placeholder="例: カフェの混雑緩和ルール" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">🔗 情報源（Web URL / 書籍名など）</label>
+        <input v-model="newMemo.source" type="text" placeholder="例: https://example.com" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">メモ内容（ファクト・客観的事実）*</label>
+        <textarea v-model="newMemo.fact" rows="4" placeholder="見たこと、体験したこと、客観的事実を入力..." class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+      </div>
+
+      <div class="p-3 bg-purple-50/60 rounded-xl border border-purple-100 space-y-1">
+        <label class="block text-xs font-bold text-purple-900 flex items-center gap-1">
+          <span>📁</span> グループタグ
+        </label>
+        <input v-model="newMemo.groupTag" type="text" placeholder="例: 業務改善プロジェクト" class="w-full p-2.5 bg-white border border-purple-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-400">
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">🏷️ 分類タグ（カンマ区切り）</label>
+        <input v-model="newMemo.tagsInput" type="text" placeholder="例: カフェ, UIデザイン" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+
+      <button @click="saveNewMemo()" :disabled="!newMemo.title || !newMemo.fact" class="w-full bg-indigo-600 disabled:bg-slate-300 text-white font-bold py-3.5 rounded-xl shadow-md transition">
+        保存して深掘りを開始
+      </button>
+    </div>
+
+    <!-- 3. メモ一覧画面 -->
+    <div v-if="currentTab === 'memos'" class="space-y-4">
+      <div class="flex justify-between items-center">
+        <h2 class="font-bold text-slate-800">メモ一覧 ({{ memos.length }})</h2>
+        <button @click="openMemoCreate()" class="text-xs bg-indigo-50 text-indigo-600 font-semibold px-3 py-1.5 rounded-lg border border-indigo-200">+ 新規作成</button>
+      </div>
+
+      <div class="space-y-3">
+        <div v-for="memo in sortedMemos" :key="memo.id" class="p-4 bg-white border border-slate-200 rounded-2xl shadow-sm transition relative">
+          <div @click="openMemoDetail(memo.id)" class="cursor-pointer">
+            <div class="flex justify-between items-start mb-1 pr-6">
+              <h3 class="font-bold text-slate-800 text-sm">{{ memo.title }}</h3>
+              <span v-if="!memo.abstraction" class="text-[10px] bg-amber-100 text-amber-800 font-medium px-2 py-0.5 rounded-full shrink-0">未深掘り</span>
+              <span v-else class="text-[10px] bg-emerald-100 text-emerald-800 font-medium px-2 py-0.5 rounded-full shrink-0">深掘り済</span>
+            </div>
+
+            <p class="text-xs text-slate-600 line-clamp-2 mb-2">{{ memo.fact }}</p>
+
+            <div class="flex flex-wrap gap-1 mb-2">
+              <span v-if="memo.groupTag" class="text-[10px] bg-purple-100 text-purple-700 font-semibold px-2 py-0.5 rounded-md">📁 {{ memo.groupTag }}</span>
+              <span v-for="tag in memo.tags" :key="tag" class="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">🏷️ {{ tag }}</span>
+            </div>
+          </div>
+
+          <div class="flex justify-between items-center text-[11px] text-slate-400 pt-2 border-t border-slate-100">
+            <span>{{ formatDate(memo.createdAt) }}</span>
+            <button @click.stop="deleteMemo(memo.id)" class="text-rose-500 hover:text-rose-700 px-2 py-1 rounded hover:bg-rose-50 transition flex items-center gap-1 font-medium">
+              <span>🗑️</span> 削除
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. メモ詳細画面 -->
+    <div v-if="currentTab === 'memo-detail' && activeMemo" class="space-y-5">
+      <div class="flex justify-between items-center">
+        <button @click="currentTab = 'memos'" class="text-xs text-slate-500 flex items-center gap-1">
+          ◀ メモ一覧へ戻る
+        </button>
+        <div class="flex items-center gap-2">
+          <button @click="copyMemo(activeMemo)" class="text-xs bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-1.5 rounded-lg border border-slate-300 font-medium flex items-center gap-1 transition">
+            <span>📋</span> コピー
+          </button>
+          <button @click="deleteMemo(activeMemo.id)" class="text-xs bg-rose-50 text-rose-600 hover:bg-rose-100 px-3 py-1.5 rounded-lg border border-rose-200 font-medium flex items-center gap-1 transition">
+            <span>🗑️</span> 削除
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <h2 class="text-xl font-bold text-slate-900 mb-2">{{ activeMemo.title }}</h2>
+        <div class="flex flex-wrap gap-1 mb-2">
+          <span v-if="activeMemo.groupTag" class="text-xs bg-purple-100 text-purple-800 font-bold px-2.5 py-1 rounded-md">📁 {{ activeMemo.groupTag }}</span>
+          <span v-for="tag in activeMemo.tags" :key="tag" class="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md">🏷️ {{ tag }}</span>
+        </div>
+        <div class="text-xs text-slate-400">{{ formatDate(activeMemo.createdAt) }}</div>
+      </div>
+
+      <div class="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+        <span class="text-xs font-bold text-slate-500 uppercase block mb-1">📌 対象メモ（ファクト・客観的事実）</span>
+        <p class="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">{{ activeMemo.fact }}</p>
+      </div>
+
+      <div class="p-4 bg-violet-50/70 border border-violet-200 rounded-2xl space-y-4">
+        <div class="border-b border-violet-200 pb-2">
+          <h3 class="text-sm font-bold text-violet-900 flex items-center gap-1.5">
+            <span>🤖</span>
+            <span>対話型AI壁打ちワーク</span>
+          </h3>
+          <p class="text-xs text-violet-700 mt-0.5">あなたの考えを入力すると、AIが思考を整理してアイデアを形にします。</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">1. メモを見て感じたこと・直感（感想・気づき）</label>
+          <textarea v-model="wallWork.impression" rows="2" placeholder="例: 事前に枠を押さえさせるだけで顧客のストレスがこんなに下がるとは思わなかった。" class="w-full p-2.5 bg-white border border-violet-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-violet-500"></textarea>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">2. どう活かせそうか？（活用・応用のアイデア案）</label>
+          <textarea v-model="wallWork.utilization" rows="2" placeholder="例: 自社の問い合わせ対応やサービス予約フローの最初のステップに応用したい。" class="w-full p-2.5 bg-white border border-violet-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-violet-500"></textarea>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">3. 自分がパッと思い浮かべている具体的なイメージ案</label>
+          <textarea v-model="wallWork.myImage" rows="2" placeholder="例: 問い合わせフォームを開いた瞬間に、AIが選択肢を出して自動でカテゴリ分けする仕組み。" class="w-full p-2.5 bg-white border border-violet-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-violet-500"></textarea>
+        </div>
+
+        <button @click="runStepAiAssist()" :disabled="aiLoading || (!wallWork.impression && !wallWork.utilization && !wallWork.myImage)" class="w-full bg-gradient-to-r from-violet-600 to-indigo-600 disabled:from-slate-300 disabled:to-slate-400 text-white font-bold py-3 rounded-xl shadow-md flex items-center justify-center gap-2 text-xs active:scale-[0.99] transition">
+          <span>✨</span>
+          <span>{{ aiLoading ? '入力された思考をまとめてアイデア化中...' : 'これらをベースにAIで内容をまとめてアイデア化' }}</span>
+        </button>
+      </div>
+
+      <div v-if="aiResult" class="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-4">
+        <div class="flex items-center justify-between border-b border-emerald-200 pb-2">
+          <h3 class="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1">
+            <span>🎯</span> AIまとめ・最終アイデア案
+          </h3>
+          <span class="text-[10px] bg-emerald-200 text-emerald-800 font-semibold px-2 py-0.5 rounded-full">壁打ち成果物</span>
+        </div>
+
+        <div>
+          <span class="text-[11px] font-bold text-emerald-800 block mb-1">【思考の構造化サマリー】</span>
+          <p class="text-xs text-slate-700 bg-white p-3 rounded-xl border border-emerald-100 leading-relaxed whitespace-pre-wrap">{{ aiResult.summary }}</p>
+        </div>
+
+        <div>
+          <span class="text-[11px] font-bold text-emerald-800 block mb-1">【昇華されたアイデア名】</span>
+          <p class="text-sm font-bold text-emerald-950 bg-white p-3 rounded-xl border border-emerald-100">{{ aiResult.ideaTitle }}</p>
+        </div>
+
+        <div>
+          <span class="text-[11px] font-bold text-emerald-800 block mb-1">【具体案・アクションプラン】</span>
+          <p class="text-xs text-slate-800 bg-white p-3 rounded-xl border border-emerald-100 leading-relaxed whitespace-pre-wrap">{{ aiResult.ideaContent }}</p>
+        </div>
+
+        <button @click="saveAiResultAsIdea()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-md flex items-center justify-center gap-2 text-xs active:scale-95 transition">
+          <span>💡</span>
+          <span>この壁打ち結果を「アイデア」として保存する</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 5. アイデア一覧画面 -->
+    <div v-if="currentTab === 'ideas'" class="space-y-4">
+      <h2 class="font-bold text-slate-800">アイデア一覧</h2>
+
+      <!-- ステータスフィルター -->
+      <div class="space-y-1">
+        <span class="text-[11px] text-slate-400 font-semibold">ステータス</span>
+        <div class="flex gap-1 overflow-x-auto pb-1 text-xs">
+          <button v-for="st in ['すべて', '思いつき', '検討中', '実行', '完了']" :key="st" 
+                  @click="ideaFilter = st"
+                  :class="ideaFilter === st ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-100 text-slate-600'"
+                  class="px-3 py-1.5 rounded-full whitespace-nowrap transition">
+            {{ st }}
+          </button>
+        </div>
+      </div>
+
+      <!-- タグフィルター -->
+      <div class="space-y-1 pt-1 border-t border-slate-100">
+        <span class="text-[11px] text-slate-400 font-semibold">🏷️ タグで絞り込み</span>
+        <div class="flex gap-1 overflow-x-auto pb-1 text-xs">
+          <button @click="selectedTagFilter = ''"
+                  :class="selectedTagFilter === '' ? 'bg-purple-700 text-white font-bold' : 'bg-purple-50 text-purple-700 border border-purple-200'"
+                  class="px-3 py-1.5 rounded-full whitespace-nowrap transition">
+            すべてのタグ
+          </button>
+          <button v-for="tag in availableIdeaTags" :key="tag" 
+                  @click="selectedTagFilter = tag"
+                  :class="selectedTagFilter === tag ? 'bg-purple-700 text-white font-bold' : 'bg-purple-50 text-purple-700 border border-purple-200'"
+                  class="px-3 py-1.5 rounded-full whitespace-nowrap transition">
+            🏷️ {{ tag }}
+          </button>
+        </div>
+      </div>
+
+      <div class="space-y-3 pt-2">
+        <div v-if="filteredIdeas.length === 0" class="text-center py-8 text-xs text-slate-400 bg-slate-50 rounded-xl border border-dashed">
+          該当するアイデアは見つかりませんでした。
+        </div>
+
+        <div v-for="idea in filteredIdeas" :key="idea.id" @click="openIdeaDetail(idea.id)" class="p-4 bg-white border border-slate-200 rounded-2xl shadow-sm hover:border-indigo-300 cursor-pointer transition space-y-2">
+          <div class="flex justify-between items-center">
+            <h3 class="font-bold text-slate-900 text-sm">{{ idea.name }}</h3>
+            <span class="text-[10px] bg-indigo-100 text-indigo-700 font-medium px-2 py-0.5 rounded-full">{{ idea.status }}</span>
+          </div>
+
+          <p class="text-xs text-slate-600 line-clamp-3 whitespace-pre-wrap">{{ idea.content }}</p>
+
+          <div class="flex flex-wrap items-center gap-1 pt-1">
+            <span v-if="idea.history && idea.history.length > 0" class="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-md">
+              v{{ (idea.history.length || 0) + 1 }} (最新)
+            </span>
+            <span v-if="idea.groupTag" class="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-md font-semibold">📁 {{ idea.groupTag }}</span>
+            <span v-for="tag in idea.tags" :key="tag" 
+                  @click.stop="selectedTagFilter = tag"
+                  class="text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md transition">
+              🏷️ {{ tag }}
+            </span>
+          </div>
+
+          <div class="flex justify-between items-center text-[11px] text-slate-400 pt-2 border-t border-slate-100">
+            <span>🔗 元メモ: {{ getMemoTitle(idea.sourceMemoId) }}</span>
+            <button @click.stop="deleteIdea(idea.id)" class="text-rose-500 hover:text-rose-700 px-2 py-0.5 rounded hover:bg-rose-50 transition flex items-center gap-1 font-medium">
+              <span>🗑️</span> 削除
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. アイデア詳細画面 (AI深掘り & 手動編集 & 履歴機能付き) -->
+    <div v-if="currentTab === 'idea-detail' && activeIdea" class="space-y-5">
+      <div class="flex justify-between items-center">
+        <button @click="currentTab = 'ideas'" class="text-xs text-slate-500 flex items-center gap-1">
+          ◀ アイデア一覧へ戻る
+        </button>
+        <div class="flex items-center gap-2">
+          <button @click="isEditingIdea = !isEditingIdea" class="text-xs bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-1.5 rounded-lg border border-slate-300 font-medium transition">
+            {{ isEditingIdea ? 'キャンセル' : '✏️ 編集' }}
+          </button>
+          <button @click="deleteIdea(activeIdea.id)" class="text-xs bg-rose-50 text-rose-600 hover:bg-rose-100 px-3 py-1.5 rounded-lg border border-rose-200 font-medium flex items-center gap-1 transition">
+            <span>🗑️</span> 削除
+          </button>
+        </div>
+      </div>
+
+      <!-- 手動編集モード -->
+      <div v-if="isEditingIdea" class="p-4 bg-amber-50/60 border border-amber-200 rounded-2xl space-y-3">
+        <h3 class="text-xs font-bold text-amber-900 uppercase tracking-wider">✏️ アイデアを手動修正</h3>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">アイデア名</label>
+          <input v-model="editIdeaForm.name" type="text" class="w-full p-2.5 bg-white border border-amber-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-amber-500">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">実施案・詳細内容</label>
+          <textarea v-model="editIdeaForm.content" rows="6" class="w-full p-2.5 bg-white border border-amber-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-amber-500"></textarea>
+        </div>
+        <button @click="saveManualEditIdea()" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 rounded-xl shadow-md text-xs transition">
+          変更内容を最新版として保存（過去版は履歴に自動追加）
+        </button>
+      </div>
+
+      <!-- 最新の実施案表示領域 -->
+      <div v-else class="space-y-4">
+        <div>
+          <div class="flex justify-between items-start mb-2">
+            <div>
+              <span class="text-[10px] bg-emerald-600 text-white font-extrabold px-2 py-0.5 rounded-md uppercase tracking-wider inline-block mb-1">
+                最新実施案 (v{{ (activeIdea.history?.length || 0) + 1 }})
+              </span>
+              <h2 class="text-xl font-bold text-slate-900">{{ activeIdea.name }}</h2>
+            </div>
+            <select v-model="activeIdea.status" class="text-xs bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 rounded-lg p-1.5 focus:outline-none shrink-0 ml-2">
+              <option value="思いつき">思いつき</option>
+              <option value="検討中">検討中</option>
+              <option value="実行">実行</option>
+              <option value="完了">完了</option>
+            </select>
+          </div>
+
+          <div class="flex flex-wrap gap-1 mb-2">
+            <span v-if="activeIdea.groupTag" class="text-xs bg-purple-100 text-purple-800 font-bold px-2 py-0.5 rounded-md">📁 {{ activeIdea.groupTag }}</span>
+            <span v-for="tag in activeIdea.tags" :key="tag" class="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-md">🏷️ {{ tag }}</span>
+          </div>
+
+          <div class="text-[11px] text-slate-400">最終更新: {{ formatDate(activeIdea.updatedAt || activeIdea.createdAt) }}</div>
+        </div>
+
+        <div class="p-4 bg-slate-50 rounded-2xl border-2 border-indigo-200/80 shadow-sm text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">
+          {{ activeIdea.content }}
+        </div>
+      </div>
+
+      <!-- AIでさらに深掘り・更新するセクション -->
+      <div class="p-4 bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-2xl space-y-3">
+        <div class="border-b border-indigo-100 pb-2">
+          <h3 class="text-xs font-bold text-indigo-900 flex items-center gap-1">
+            <span>✨</span> AIでさらに深掘り・内容をアップデート
+          </h3>
+          <p class="text-[11px] text-indigo-700 mt-0.5">追加したい視点や条件を入力すると、AIが現在の案をさらに発展させた最新案を作成します。</p>
+        </div>
+
+        <textarea v-model="deepenPrompt" rows="3" placeholder="例: 費用をかけずに明日から試せる小規模なテスト運用プランを追加してほしい。ターゲット層を若年層に絞るとどうなる？" class="w-full p-2.5 bg-white border border-indigo-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+
+        <button @click="deepenIdeaWithAi()" :disabled="aiDeepenLoading || !deepenPrompt" class="w-full bg-indigo-600 disabled:bg-slate-300 text-white font-bold py-2.5 rounded-xl shadow-md text-xs flex items-center justify-center gap-2 transition">
+          <span>🚀</span>
+          <span>{{ aiDeepenLoading ? 'AIが思考を深掘り・最新案を生成中...' : 'この条件でアイデアを深掘り更新する' }}</span>
+        </button>
+      </div>
+
+      <!-- 過去の変更履歴（バージョン管理） -->
+      <div v-if="activeIdea.history && activeIdea.history.length > 0" class="pt-4 border-t border-slate-200 space-y-3">
+        <div class="flex justify-between items-center">
+          <h3 class="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
+            <span>📜</span> 過去の変更履歴 (全{{ activeIdea.history.length }}件)
+          </h3>
+          <button @click="showHistory = !showHistory" class="text-xs text-indigo-600 font-semibold">
+            {{ showHistory ? '非表示にする' : '履歴を表示する' }}
+          </button>
+        </div>
+
+        <div v-if="showHistory" class="space-y-3">
+          <div v-for="(hist, idx) in activeIdea.history.slice().reverse()" :key="idx" class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+            <div class="flex justify-between items-center text-[11px]">
+              <span class="font-bold text-slate-700 bg-slate-200 px-2 py-0.5 rounded">v{{ activeIdea.history.length - idx }}</span>
+              <span class="text-slate-400">{{ formatDate(hist.updatedAt) }}</span>
+            </div>
+            <div class="font-bold text-xs text-slate-800">{{ hist.name }}</div>
+            <p class="text-xs text-slate-600 line-clamp-3 whitespace-pre-wrap bg-white p-2 rounded border border-slate-100">{{ hist.content }}</p>
+            <div class="text-right">
+              <button @click="restoreHistory(hist)" class="text-[11px] text-indigo-600 hover:underline font-semibold">
+                🔄 この過去バージョンを最新版に戻す
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="activeIdea.sourceMemoId" class="pt-3 border-t">
+        <span class="text-xs font-bold text-slate-500 uppercase block mb-2">元になったメモ</span>
+        <div @click="openMemoDetail(activeIdea.sourceMemoId)" class="p-3 bg-indigo-50/40 border border-indigo-100 rounded-xl cursor-pointer hover:border-indigo-300 transition">
+          <div class="font-bold text-xs text-indigo-900 mb-1">{{ getMemoTitle(activeIdea.sourceMemoId) }}</div>
+          <p class="text-xs text-slate-600 line-clamp-2">{{ getMemoFact(activeIdea.sourceMemoId) }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. 検索画面 -->
+    <div v-if="currentTab === 'search'" class="space-y-4">
+      <h2 class="font-bold text-slate-800">検索・絞り込み</h2>
+
+      <div class="relative">
+        <input v-model="searchQuery" type="text" placeholder="キーワード、情報源、タグを検索..." class="w-full p-3 pl-8 bg-slate-100 border-none rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <span class="text-sm absolute left-2.5 top-3">🔍</span>
+      </div>
+
+      <div class="space-y-1.5">
+        <label class="block text-xs font-bold text-purple-900 flex items-center gap-1">
+          <span>📁</span> グループで絞り込み
+        </label>
+        <select v-model="selectedGroup" class="w-full p-2.5 bg-purple-50/60 border border-purple-200 rounded-xl text-xs font-semibold text-purple-950 focus:outline-none focus:ring-2 focus:ring-purple-400">
+          <option value="">すべてのグループ ({{ memos.length }}件)</option>
+          <option v-for="group in availableGroups" :key="group" :value="group">
+            📁 {{ group }}
+          </option>
+        </select>
+      </div>
+
+      <div class="space-y-2 pt-2">
+        <div v-if="searchResults.length === 0" class="text-center py-8 text-xs text-slate-400">
+          条件に一致するメモが見つかりませんでした。
+        </div>
+
+        <div v-for="memo in searchResults" :key="memo.id" @click="openMemoDetail(memo.id)" class="p-3 bg-white border border-slate-200 rounded-xl cursor-pointer hover:border-indigo-300 transition">
+          <div class="flex justify-between items-center mb-1">
+            <span class="font-bold text-xs text-slate-800">{{ memo.title }}</span>
+            <span v-if="memo.groupTag" class="text-[10px] bg-purple-100 text-purple-700 font-semibold px-2 py-0.5 rounded">📁 {{ memo.groupTag }}</span>
+          </div>
+          <p class="text-xs text-slate-500 line-clamp-1 mb-1">{{ memo.fact }}</p>
+          <div v-if="memo.source" class="text-[10px] text-slate-400 truncate">🔗 {{ memo.source }}</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- 下部ナビゲーション -->
+  <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/90 backdrop-blur-md border-t border-slate-200 flex justify-around py-2 z-20">
+    <button @click="currentTab = 'home'" :class="currentTab === 'home' ? 'text-indigo-600 font-bold' : 'text-slate-400'" class="flex flex-col items-center gap-0.5">
+      <span class="text-base">🏠</span>
+      <span class="text-[10px]">ホーム</span>
+    </button>
+    <button @click="currentTab = 'memos'" :class="['memos', 'memo-detail', 'memo-create'].includes(currentTab) ? 'text-indigo-600 font-bold' : 'text-slate-400'" class="flex flex-col items-center gap-0.5">
+      <span class="text-base">📝</span>
+      <span class="text-[10px]">メモ</span>
+    </button>
+    <button @click="currentTab = 'ideas'" :class="['ideas', 'idea-detail'].includes(currentTab) ? 'text-indigo-600 font-bold' : 'text-slate-400'" class="flex flex-col items-center gap-0.5">
+      <span class="text-base">💡</span>
+      <span class="text-[10px]">アイデア</span>
+    </button>
+    <button @click="currentTab = 'search'" :class="currentTab === 'search' ? 'text-indigo-600 font-bold' : 'text-slate-400'" class="flex flex-col items-center gap-0.5">
+      <span class="text-base">🔍</span>
+      <span class="text-[10px]">検索</span>
+    </button>
+  </nav>
+
+</div>
+
+<script>
+  const { createApp, ref, computed, onMounted, watch } = Vue;
+
+  createApp({
+    setup() {
+      const currentTab = ref('home');
+      const searchQuery = ref('');
+      const selectedGroup = ref('');
+      const ideaFilter = ref('すべて');
+      const selectedTagFilter = ref('');
+      const toastMessage = ref('');
+
+      const memos = ref([]);
+      const ideas = ref([]);
+
+      // 深掘り・編集関連の状態
+      const deepenPrompt = ref('');
+      const aiDeepenLoading = ref(false);
+      const showHistory = ref(false);
+      const isEditingIdea = ref(false);
+      const editIdeaForm = ref({ name: '', content: '' });
+
+      const ensureDefaultTags = (ideaList) => {
+        return ideaList.map(item => {
+          if (!item.tags || item.tags.length === 0) {
+            item.tags = ['思い付き'];
+          }
+          if (!item.history) {
+            item.history = [];
+          }
+          return item;
+        });
+      };
+
+      onMounted(() => {
+        const savedMemos = localStorage.getItem('memo_magic_memos');
+        const savedIdeas = localStorage.getItem('memo_magic_ideas');
+
+        if (savedMemos) {
+          memos.value = JSON.parse(savedMemos);
+        } else {
+          memos.value = [{
+            id: 1,
+            title: 'カフェの事前注文システム',
+            fact: '近所のカフェでは注文前に席を確保させるルールにしたら、レジ前の混雑が半減して客の滞在ストレスが減っていた。',
+            abstraction: '事前キュー分類によるボトルネックの解消',
+            application: '自社タスク管理での着手前定義フロー',
+            source: 'https://example.com/cafe-ux-case',
+            groupTag: '業務効率化',
+            tags: ['カフェ', 'UX'],
+            createdAt: new Date().toISOString()
+          }];
+        }
+
+        if (savedIdeas) {
+          ideas.value = ensureDefaultTags(JSON.parse(savedIdeas));
+        } else {
+          ideas.value = ensureDefaultTags([{
+            id: 101,
+            name: 'タスクの「待機室」機能モック作成',
+            content: '着手前のタスクを整理・分類するための入力ステップ。',
+            sourceMemoId: 1,
+            groupTag: '業務効率化',
+            tags: ['タスク管理'],
+            status: '検討中',
+            history: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }]);
+        }
+      });
+
+      watch(memos, (newVal) => {
+        localStorage.setItem('memo_magic_memos', JSON.stringify(newVal));
+      }, { deep: true });
+
+      watch(ideas, (newVal) => {
+        localStorage.setItem('memo_magic_ideas', JSON.stringify(newVal));
+      }, { deep: true });
+
+      const activeMemoId = ref(null);
+      const activeIdeaId = ref(null);
+
+      const newMemo = ref({ title: '', fact: '', source: '', groupTag: '', tagsInput: '' });
+
+      const wallWork = ref({ impression: '', utilization: '', myImage: '' });
+      const aiLoading = ref(false);
+      const aiResult = ref(null);
+
+      const availableGroups = computed(() => {
+        const groups = memos.value.map(m => m.groupTag).filter(g => Boolean(g));
+        return [...new Set(groups)];
+      });
+
+      const availableIdeaTags = computed(() => {
+        const allTags = ideas.value.flatMap(i => i.tags || []);
+        return [...new Set(allTags)];
+      });
+
+      const sortedMemos = computed(() => [...memos.value].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+      const pendingMemos = computed(() => memos.value.filter(m => !m.abstraction));
+      const activeIdeas = computed(() => ideas.value.filter(i => i.status !== '完了'));
+
+      const filteredIdeas = computed(() => {
+        return ideas.value.filter(i => {
+          const matchStatus = ideaFilter.value === 'すべて' || i.status === ideaFilter.value;
+          const matchTag = !selectedTagFilter.value || (i.tags && i.tags.includes(selectedTagFilter.value));
+          return matchStatus && matchTag;
+        });
+      });
+
+      const activeMemo = computed(() => memos.value.find(m => m.id === activeMemoId.value));
+      const activeIdea = computed(() => ideas.value.find(i => i.id === activeIdeaId.value));
+
+      const showToast = (msg) => {
+        toastMessage.value = msg;
+        setTimeout(() => { toastMessage.value = ''; }, 2000);
+      };
+
+      const searchResults = computed(() => {
+        return memos.value.filter(m => {
+          if (selectedGroup.value && m.groupTag !== selectedGroup.value) return false;
+          if (searchQuery.value) {
+            const q = searchQuery.value.toLowerCase();
+            const matchTitle = m.title.toLowerCase().includes(q);
+            const matchFact = m.fact.toLowerCase().includes(q);
+            const matchSource = m.source && m.source.toLowerCase().includes(q);
+            const matchTags = m.tags.some(t => t.toLowerCase().includes(q));
+            return matchTitle || matchFact || matchSource || matchTags;
+          }
+          return true;
+        });
+      });
+
+      const openMemoCreate = () => {
+        newMemo.value = { title: '', fact: '', source: '', groupTag: '', tagsInput: '' };
+        currentTab.value = 'memo-create';
+      };
+
+      const saveNewMemo = () => {
+        if (!newMemo.value.title || !newMemo.value.fact) return;
+        const tags = newMemo.value.tagsInput ? newMemo.value.tagsInput.split(',').map(t => t.trim()) : [];
+
+        const memo = {
+          id: Date.now(),
+          title: newMemo.value.title,
+          fact: newMemo.value.fact,
+          source: newMemo.value.source.trim(),
+          abstraction: '',
+          application: '',
+          groupTag: newMemo.value.groupTag.trim(),
+          tags: tags,
+          createdAt: new Date().toISOString()
+        };
+        memos.value.unshift(memo);
+        openMemoDetail(memo.id);
+        showToast('メモを保存しました');
+      };
+
+      const openMemoDetail = (id) => {
+        activeMemoId.value = id;
+        wallWork.value = { impression: '', utilization: '', myImage: '' };
+        aiResult.value = null;
+        currentTab.value = 'memo-detail';
+      };
+
+      const deleteMemo = (id) => {
+        if (confirm('このメモを削除してもよろしいですか？')) {
+          memos.value = memos.value.filter(m => m.id !== id);
+          if (currentTab.value === 'memo-detail') {
+            currentTab.value = 'memos';
+          }
+          showToast('メモを削除しました');
+        }
+      };
+
+      const deleteIdea = (id) => {
+        if (confirm('このアイデアを削除してもよろしいですか？')) {
+          ideas.value = ideas.value.filter(i => i.id !== id);
+          if (currentTab.value === 'idea-detail') {
+            currentTab.value = 'ideas';
+          }
+          showToast('アイデアを削除しました');
+        }
+      };
+
+      const copyMemo = (memo) => {
+        const textToCopy = `【${memo.title}】\n${memo.fact}${memo.source ? '\n🔗 ' + memo.source : ''}`;
+        navigator.clipboard.writeText(textToCopy).then(() => {
+          showToast('クリップボードにコピーしました');
+        }).catch(() => {
+          showToast('コピーに失敗しました');
+        });
+      };
+
+      const openIdeaDetail = (id) => {
+        activeIdeaId.value = id;
+        deepenPrompt.value = '';
+        showHistory.value = false;
+        isEditingIdea.value = false;
+        if (activeIdea.value) {
+          editIdeaForm.value = {
+            name: activeIdea.value.name,
+            content: activeIdea.value.content
+          };
+        }
+        currentTab.value = 'idea-detail';
+      };
+
+      const runStepAiAssist = () => {
+        aiLoading.value = true;
+        setTimeout(() => {
+          aiLoading.value = false;
+          const imp = wallWork.value.impression || '特になし';
+          const util = wallWork.value.utilization || '応用・展開';
+          const img = wallWork.value.myImage || '具体的な施策案';
+
+          aiResult.value = {
+            summary: `【入力の整理】\n・気づき: ${imp}\n・活用方向: ${util}\n・自身のイメージ: ${img}`,
+            ideaTitle: `${activeMemo.value.title} × ${img.slice(0, 12)}...の実現フロー`,
+            ideaContent: `【施策概要】\nメモのファクトと「${imp}」という気づきを起点に、「${util}」の方向性で構築された具体案です。\n\n【実行ステップ】\n1. 課題設計: ${img}におけるボトルネックの特定\n2. アクション: 既存フローに「事前確認・入力」ステップを追加して負担を軽減する\n3. 期待効果: 待ち時間の短縮およびユーザー満足度の向上`
+          };
+          showToast('AIがまとめとアイデアを生成しました');
+        }, 1000);
+      };
+
+      const saveAiResultAsIdea = () => {
+        if (!aiResult.value || !activeMemo.value) return;
+
+        const ideaTags = (activeMemo.value.tags && activeMemo.value.tags.length > 0) 
+                          ? activeMemo.value.tags 
+                          : ['思い付き'];
+
+        const newIdea = {
+          id: Date.now(),
+          name: aiResult.value.ideaTitle,
+          content: `${aiResult.value.summary}\n\n${aiResult.value.ideaContent}`,
+          sourceMemoId: activeMemo.value.id,
+          groupTag: activeMemo.value.groupTag,
+          tags: ideaTags,
+          status: '思いつき',
+          history: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+
+        activeMemo.value.abstraction = wallWork.value.impression;
+        activeMemo.value.application = wallWork.value.utilization;
+
+        ideas.value.unshift(newIdea);
+        showToast('アイデアとして保存しました！');
+        openIdeaDetail(newIdea.id);
+      };
+
+      // AIによる再深掘り・アップデート処理
+      const deepenIdeaWithAi = () => {
+        if (!activeIdea.value || !deepenPrompt.value) return;
+        aiDeepenLoading.value = true;
+
+        setTimeout(() => {
+          aiDeepenLoading.value = false;
+          const current = activeIdea.value;
+
+          // 現行の案を履歴に退避
+          if (!current.history) current.history = [];
+          current.history.push({
+            name: current.name,
+            content: current.content,
+            updatedAt: current.updatedAt || current.createdAt
+          });
+
+          // AI深掘りによる新しいコンテンツ生成
+          current.name = `${current.name.replace(/（v\d+.*）/, '')}（ブラッシュアップ案）`;
+          current.content = `${current.content}\n\n------------------\n【✨ AI深掘り追加要素 (${formatDate(new Date().toISOString())})】\n■ 深掘り観点: ${deepenPrompt.value}\n■ 最新実行ステップ・拡張案:\n1. 具体的アプローチ: ${deepenPrompt.value.slice(0, 15)}...に焦点を当てたリトライ施策の導入\n2. 運用の工夫: リソースを最小限に抑えるため初期フェーズではスモールスタートで検証\n3. 追記された成果指標: 実践ログの蓄積と定量的フィードバックの回収`;
+          current.updatedAt = new Date().toISOString();
+
+          deepenPrompt.value = '';
+          showToast('アイデアを深掘り・最新案として更新しました！');
+        }, 1200);
+      };
+
+      // 手動編集の保存処理
+      const saveManualEditIdea = () => {
+        if (!activeIdea.value) return;
+        const current = activeIdea.value;
+
+        // 現行の案を履歴に退避
+        if (!current.history) current.history = [];
+        current.history.push({
+          name: current.name,
+          content: current.content,
+          updatedAt: current.updatedAt || current.createdAt
+        });
+
+        current.name = editIdeaForm.value.name;
+        current.content = editIdeaForm.value.content;
+        current.updatedAt = new Date().toISOString();
+
+        isEditingIdea.value = false;
+        showToast('アイデアを手動更新しました（履歴を保存）');
+      };
+
+      // 過去バージョンからの復元処理
+      const restoreHistory = (hist) => {
+        if (!activeIdea.value) return;
+        if (confirm('この過去バージョンを最新の実施案として復元しますか？（現在の案は履歴に保存されます）')) {
+          const current = activeIdea.value;
+
+          current.history.push({
+            name: current.name,
+            content: current.content,
+            updatedAt: current.updatedAt || current.createdAt
+          });
+
+          current.name = hist.name;
+          current.content = hist.content;
+          current.updatedAt = new Date().toISOString();
+
+          editIdeaForm.value = { name: current.name, content: current.content };
+          showToast('過去バージョンを復元しました');
+        }
+      };
+
+      const getMemoTitle = (id) => {
+        const m = memos.value.find(item => item.id === id);
+        return m ? m.title : '不明なメモ';
+      };
+
+      const getMemoFact = (id) => {
+        const m = memos.value.find(item => item.id === id);
+        return m ? m.fact : '';
+      };
+
+      const formatDate = (iso) => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+      };
+
+      return {
+        currentTab, searchQuery, selectedGroup, availableGroups, availableIdeaTags, ideaFilter, selectedTagFilter, memos, ideas, activeMemoId, activeIdeaId,
+        newMemo, wallWork, pendingMemos, activeIdeas, sortedMemos, filteredIdeas, activeMemo, activeIdea, searchResults,
+        aiLoading, aiResult, toastMessage, deepenPrompt, aiDeepenLoading, showHistory, isEditingIdea, editIdeaForm,
+        openMemoCreate, saveNewMemo, openMemoDetail, deleteMemo, deleteIdea, copyMemo, openIdeaDetail, runStepAiAssist, saveAiResultAsIdea,
+        deepenIdeaWithAi, saveManualEditIdea, restoreHistory,
+        getMemoTitle, getMemoFact, formatDate
+      };
+    }
+  }).mount('#app');
+</script>
+</body>
+</html>
